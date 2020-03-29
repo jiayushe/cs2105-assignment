@@ -7,19 +7,17 @@ class Bob:
         self.socket = socket(AF_INET, SOCK_DGRAM)
         self.socket.bind(('', port_number))
         self.seq = 0
-        self.packet = bytearray()
-    
+
     def send(self, address, flag):
-        key = 'ACK' if flag else 'NAK'
-        feedback = key.encode()
-        checksum = zlib.crc32(feedback)
-        self.packet = (str(checksum) + ' ').encode() + feedback
-        self.socket.sendto(self.packet, address)
+        key = ('ACK' if flag else 'NAK').encode()
+        checksum = zlib.crc32(key)
+        packet = (str(checksum) + ' ').encode() + key
+        self.socket.sendto(packet, address)
 
     def start(self):        
         while True:
-            segdata, address = self.socket.recvfrom(2048)
-            resp = segdata.decode()
+            data, address = self.socket.recvfrom(1024)
+            resp = data.decode()
             if resp.count(' ') < 2:
                 self.send(address, 0)
                 continue
@@ -27,13 +25,11 @@ class Bob:
             if not (substrings[0].isdigit() and substrings[1].isdigit()):
                 self.send(address, 0)
                 continue
-            checksum = int(substrings[0])
-            recvseq = int(substrings[1])
-            segment = substrings[2]
-            if checksum == zlib.crc32(segment.encode()):
+            checksum, recvseq, recvdata = int(substrings[0]), int(substrings[1]), substrings[2]
+            if checksum == zlib.crc32(recvdata.encode()):
                 if recvseq == self.seq:
+                    sys.stdout.write(recvdata)
                     self.seq += 1
-                    print(segment, end = '')
                 self.send(address, 1)
             else:
                 self.send(address, 0)

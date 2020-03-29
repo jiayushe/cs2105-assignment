@@ -5,52 +5,44 @@ from socket import *
 class Alice:
     def __init__(self, port_number):
         self.socket = socket(AF_INET, SOCK_DGRAM)
-        self.port = port_number
-        self.server = 'localhost'
+        self.address = ('localhost', port_number)
         self.seq = 0
         self.packet = bytearray()
-        self.feedback = ''
-        self.maxn = 60
-    
-    def send(self):
-        self.socket.sendto(self.packet, (self.server, self.port))
-        self.feedback, address = self.socket.recvfrom(2048)
+        self.feedback = bytearray()
 
-    def start(self):        
-        while True:
-            message = input()
-            offset = 0
-            while offset < len(message):
-                if offset + self.maxn < len(message):
-                    segment = message[offset:offset + self.maxn]
-                else:
-                    segment = message[offset:]
-                offset += self.maxn
-                segdata = segment.encode()
-                if offset >= len(message):
-                    segdata += ('\n').encode()
-                checksum = zlib.crc32(segdata)
-                self.packet = (str(checksum) + ' ' + str(self.seq) + ' ').encode() + segdata
-                self.send()
-                self.validate()
-                self.seq += 1
+    def send(self):
+        try:
+            self.socket.sendto(self.packet, self.address)
+            self.socket.settimeout(0.1)
+            self.feedback, address = self.socket.recvfrom(1024)
+            self.validate()
+        except timeout:
+            self.send()
     
     def validate(self):
+        resp = self.feedback.decode()
+        if resp.count(' ') < 1:
+            self.send()
+            return
+        substrings = resp.split(' ', 1)
+        if not substrings[0].isdigit():
+            self.send()
+            return
+        checksum, key = int(substrings[0]), substrings[1]
+        if checksum != zlib.crc32(key.encode()) or key != 'ACK':
+            self.send()
+            return
+
+    def start(self):
         while True:
-            resp = self.feedback.decode()
-            if resp.count(' ') < 1:
-                self.send()
-                continue
-            substrings = resp.split(' ', 1)
-            if not substrings[0].isdigit():
-                self.send()
-                continue
-            fbkchecksum = int(substrings[0])
-            fbksegment = substrings[1]
-            if fbkchecksum != zlib.crc32(fbksegment.encode()) or substrings[1] != 'ACK':
-               self.send()
-               continue
-            break
+            message = sys.stdin.read(50)
+            if message == '':
+                break
+            data = message.encode()
+            checksum = zlib.crc32(data)
+            self.packet = (str(checksum) + ' ' + str(self.seq) + ' ').encode() + data
+            self.send()
+            self.seq += 1
 
 def main():
     if len(sys.argv) != 2:
